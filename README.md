@@ -25,13 +25,12 @@ GTD 的规则是"收集要快，整理要定期"，但现实是：
 
 ## 效果
 
-**整理前** —— 待办随手丢进 Inbox，日期混在标题里，没有区域归属：
+**整理前** —— 待办随手丢进 Inbox，日期混在标题里，没有区域归属；
+**整理后** —— 自动归入区域（条目下方小字）、日期排进 When（Upcoming 按天分组）、
+标题清理干净（`9/26 14:00 提交设计终稿` → When=周六 + 标题只剩 `14:00 提交设计终稿`），
+`9/28 前发出` 这类截止语义写进 notes 而不占日期：
 
-![Inbox before: raw todos with dates buried in titles](docs/assets/before-inbox.png)
-
-**整理后** —— 自动归入区域、日期排进 When（按天分组）、标题清理干净：
-
-![Work area after: todos routed with dates scheduled and clean titles](docs/assets/after-work.png)
+![before: raw inbox items -> after: routed to areas with dates scheduled](docs/assets/before-after.png)
 
 ## 整体架构：一条三段式 AI 流水线
 
