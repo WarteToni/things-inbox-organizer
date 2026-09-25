@@ -1,0 +1,6 @@
+name: things-bridge
+version: 1.0.0
+description: "Hermes -> Things (Cultured Code) todo bridge: add_things_todo pushes a Bark notification carrying a things:///add URL; tap to create the todo in Things. Durable queue + retry."
+author: "WarteToni"
+kind: standalone
+hooks: []
