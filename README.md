@@ -27,7 +27,7 @@ GTD 的规则是"收集要快，整理要定期"，但现实是：
 ## 快速开始
 
 ```bash
-git clone https://github.com/powerycz/things-inbox-organizer.git
+git clone https://github.com/WarteToni/things-inbox-organizer.git
 cd things-inbox-organizer
 
 # 1. 授权终端控制 Things（首次会弹窗）
