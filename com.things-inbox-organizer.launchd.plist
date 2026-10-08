@@ -11,17 +11,10 @@
     </array>
     <key>RunAtLoad</key>
     <true/>
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
-    </array>
+    <!-- 每 30 分钟一次；睡眠时暂停计时，唤醒后过期立即补跑（错过多次只补一次）。
+         空跑仅查一次 Inbox、不调 LLM，成本可忽略。 -->
+    <key>StartInterval</key>
+    <integer>1800</integer>
     <key>StandardOutPath</key>
     <string>/tmp/things-organizer.out</string>
     <key>StandardErrorPath</key>

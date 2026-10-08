@@ -49,7 +49,7 @@ GTD 的规则是"收集要快，整理要定期"，但现实是：
                           │
                           ▼  Things Cloud 同步，Mac 的 Inbox 出现这条待办
                           │
-【下游】本工具（Mac 端 launchd，每 2 小时）
+【下游】本工具（Mac 端 launchd，每 30 分钟）
 ┌────────────────────────────────────────────────────────────┐
 │  1. AppleScript 读出 Inbox 全部条目（含创建日期）            │
 │  2. GLM 批量抽取：area + date(YYYY-MM-DD) + is_deadline     │
@@ -85,7 +85,7 @@ echo 'THINGSORG_API_KEY=你的Key' >> ~/.things-organizer/.env
 python3 things_inbox_organizer.py --dry-run
 tail -20 ~/Library/Logs/things-organizer.log
 
-# 4. 满意后装成定时任务（8:00-22:00 每 2 小时）
+# 4. 满意后装成定时任务（每 30 分钟，睡眠时暂停、唤醒补跑）
 bash install.sh
 ```
 

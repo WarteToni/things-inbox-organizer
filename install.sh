@@ -29,5 +29,5 @@ touch ~/Library/Logs/things-organizer.log
 echo ""
 echo "=== 安装完成 ==="
 echo "源码位置: $DIR"
-echo "定时: 8:00-22:00 每 2 小时；日志: ~/Library/Logs/things-organizer.log"
+echo "定时: 每 30 分钟（睡眠时暂停，唤醒后立即补跑）；日志: ~/Library/Logs/things-organizer.log"
 echo "API Key 在 ~/.things-organizer/.env（若未填，跑一次脚本会生成示例）"
