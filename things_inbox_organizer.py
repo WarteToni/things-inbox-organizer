@@ -5,16 +5,22 @@ Things Inbox 自动归档工具 (macOS)
 读取 Things 3 Inbox 待办 -> GLM 抽取(区域 + 日期) -> AppleScript 归档。
 用法: python3 things_inbox_organizer.py [--dry-run]
 
-归档规则（2026-09-24 修订）:
+归档规则（2026-09-24 修订，2026-10-18 增补 Reminder）:
 - 条目写了明确日期 -> 设到 Things 的 When 字段，并把日期词从标题里删掉（时刻保留）
 - "X 前" 这类 deadline 语义 -> 不设 When，日期写进 notes
 - 没写日期 -> 只归区域，When 留空（落在区域 Anytime），不猜日期
+- notes 独立一行 [Reminder] YYYY-MM-DD HH:MM（兼容旧写法 [闹钟]）
+  -> When=标记日期 + Reminder=标记时刻（things:///json 写入，随云同步 iPhone 推送）
+- Inbox 内同标题重复条目 -> 保留最早一条，Reminder 标记并入后删除其余
 """
+import glob
 import json
+import re
 import subprocess
 import sys
 import time
 import os
+import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import datetime, date
@@ -29,6 +35,11 @@ LLM_TIMEOUT = 120           # glm-5.3 思考恒开，留足超时
 SHORT_TITLE_LEN = 12        # 短标题不做长度校验
 MIN_TITLE_KEEP_RATIO = 0.4  # 长标题至少保留原文这个比例，防 LLM 过度概括
 DEADLINE_NOTE_PREFIX = "[截止] "
+# [Reminder] 标记：notes 里独立一行，设 When+Reminder（兼容旧写法 [闹钟]）
+REMINDER_NOTE_RE = re.compile(
+    r"^[ \t]*\[(?:Reminder|闹钟)\][ \t]+(\d{4}-\d{2}-\d{2})[ \t]+(\d{1,2}:\d{2})[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 # 区域体系：LLM 只需返回 key；AppleScript 按名字精确匹配区域。
 # 个人区域配置在 ~/.things-organizer/areas.json（不进 git），格式:
@@ -202,6 +213,107 @@ def normalize_date(s: str) -> str:
     return d.isoformat()
 
 
+def parse_reminder(notes: str):
+    """解析 notes 里独立一行的 [Reminder]/[闹钟] YYYY-MM-DD HH:MM，返回 (date, hh:mm) 或 None"""
+    m = REMINDER_NOTE_RE.search(notes or "")
+    if not m:
+        return None
+    d, t = m.group(1), m.group(2)
+    try:
+        datetime.strptime(f"{d} {t}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        log(f'WARN [Reminder] 标记日期时间非法 "{d} {t}"，忽略')
+        return None
+    if d < date.today().isoformat():
+        log(f"WARN [Reminder] 标记日期 {d} 已过期，忽略")
+        return None
+    return d, t
+
+
+def load_url_token() -> str:
+    """Things URL scheme auth-token：优先 .env 的 THINGS_URL_TOKEN，否则只读查 Things 数据库"""
+    try:
+        with open(ENV_PATH, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("THINGS_URL_TOKEN="):
+                    v = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if v:
+                        return v
+    except OSError:
+        pass
+    db_glob = os.path.expanduser(
+        "~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/"
+        "ThingsData-*/Things Database.thingsdatabase/main.sqlite"
+    )
+    for db in glob.glob(db_glob):
+        try:
+            p = subprocess.run(
+                ["sqlite3", f"file:{db}?mode=ro",
+                 "SELECT uriSchemeAuthenticationToken FROM TMSettings "
+                 "WHERE uriSchemeAuthenticationToken IS NOT NULL "
+                 "AND uriSchemeAuthenticationToken != '' LIMIT 1;"],
+                capture_output=True, text=True, timeout=15,
+            )
+            tok = p.stdout.strip()
+            if tok:
+                return tok
+        except Exception as e:
+            log(f"WARN 读取 Things 数据库 token 失败: {e}")
+    return ""
+
+
+def set_when_reminder(tid: str, d: str, hhmm: str) -> None:
+    """things:///json update：设 When=d + Reminder=hhmm（官方 URL scheme，随云同步 iPhone 推送）
+    注意 Things 内部以 1/32 小时粒度存储时刻，误差 <2 分钟"""
+    token = load_url_token()
+    if not token:
+        raise RuntimeError(
+            "未获取到 Things URL token：请在 Things 设置->通用->Enable Things URLs 后重跑")
+    payload = [{"type": "to-do", "operation": "update", "id": tid,
+                "attributes": {"when": f"{d}@{hhmm}"}}]
+    url = ("things:///json?data="
+           + urllib.parse.quote(json.dumps(payload, separators=(",", ":")), safe="")
+           + "&auth-token=" + token)
+    subprocess.run(["osascript", "-e", 'open location "' + url + '"'],
+                   capture_output=True, text=True, timeout=30, check=True)
+    time.sleep(3)  # Things 异步处理 URL 命令
+
+
+def delete_to_do(tid: str) -> None:
+    """把待办移入 Trash（可恢复）"""
+    run_osascript('tell application "Things3" to delete to do id "{}"'.format(tid))
+
+
+def merge_duplicates(items: list, dry: bool = False) -> list:
+    """Inbox 内同标题去重（ECSA 合并规则）：保留最早一条，其余移入 Trash；
+    重复条目上的 [Reminder] 标记并入保留条，保证提醒不丢"""
+    kept, seen = [], {}
+    merged = 0
+    for it in items:
+        key = " ".join(it["name"].split())
+        if key in seen:
+            keeper = seen[key]
+            rem = parse_reminder(it["notes"])
+            if rem and not keeper.get("_reminder"):
+                keeper["_reminder"] = rem
+            merged += 1
+            if dry:
+                log('[dry-run] 合并同标题: 删除重复条 "{}"，保留较早一条'.format(key[:50]))
+            else:
+                delete_to_do(it["id"])
+                log('合并同标题: 删除重复条 "{}"（标记并入保留条）'.format(key[:50]))
+        else:
+            rem = parse_reminder(it["notes"])
+            if rem:
+                it["_reminder"] = rem
+            seen[key] = it
+            kept.append(it)
+    if merged:
+        log(f"同标题合并 {merged} 条")
+    return kept
+
+
 def area_lines(areas: dict) -> str:
     """把区域配置渲染成 prompt 行"""
     return "\n".join(f'   - "{k}": {v["desc"]}' for k, v in areas.items())
@@ -303,10 +415,11 @@ end tell'''.format(tid=tid, line=esc(line))
 
 
 def apply_decision(item: dict, dec: dict) -> str:
-    """移入区域 + 设 When（或 deadline 写 notes）+ 清理标题，返回描述"""
+    """移入区域 + 设 When/Reminder（或 deadline 写 notes）+ 清理标题，返回描述"""
     tid = item["id"]
     area_name = AREAS[dec["area"]]["name"]
     d = dec["date"]
+    rem = item.get("_reminder")
     acts = []
 
     # 1. 移入区域（区域可经 list "区域名" 寻址，实测可移入）
@@ -315,8 +428,12 @@ def apply_decision(item: dict, dec: dict) -> str:
     )
     acts.append(area_name)
 
-    # 2. 日期：执行日 -> When；deadline -> notes；无日期 -> 不设（落 Anytime）
-    if d and dec["is_deadline"]:
+    # 2. [Reminder] 标记优先（显式信号覆盖 LLM 推断）：When+Reminder 一起设
+    #    其次 deadline -> notes；普通执行日 -> When；无日期 -> 不设（落 Anytime）
+    if rem:
+        set_when_reminder(tid, rem[0], rem[1])
+        acts.append(f"when={rem[0]} reminder={rem[1]}")
+    elif d and dec["is_deadline"]:
         append_note(tid, DEADLINE_NOTE_PREFIX + d)
         acts.append(f"deadline→notes({d})")
     elif d:
@@ -326,7 +443,7 @@ def apply_decision(item: dict, dec: dict) -> str:
         acts.append("无日期→Anytime")
 
     # 3. 标题清理（仅在日期已落位后，避免信息丢失）
-    if d and is_safe_rewrite(item["name"], dec["title"]):
+    if (d or rem) and is_safe_rewrite(item["name"], dec["title"]):
         run_osascript(
             'tell application "Things3" to set name of to do id "{}" to "{}"'.format(
                 tid, esc(dec["title"]))
@@ -338,11 +455,15 @@ def apply_decision(item: dict, dec: dict) -> str:
 
 def describe(item: dict, dec: dict) -> str:
     """dry-run 预览：人话描述将要执行的动作"""
-    tag = AREAS[dec["area"]]["name"] + " | " + (dec["date"] or "无日期→Anytime")
-    if dec["date"] and dec["is_deadline"]:
-        tag += " (deadline→notes)"
+    rem = item.get("_reminder")
+    if rem:
+        tag = AREAS[dec["area"]]["name"] + f" | when={rem[0]} reminder={rem[1]}"
+    else:
+        tag = AREAS[dec["area"]]["name"] + " | " + (dec["date"] or "无日期→Anytime")
+        if dec["date"] and dec["is_deadline"]:
+            tag += " (deadline→notes)"
     line = '"{}" -> {}'.format(item["name"][:60], tag)
-    if dec["date"] and is_safe_rewrite(item["name"], dec["title"]):
+    if (dec["date"] or rem) and is_safe_rewrite(item["name"], dec["title"]):
         line += ' | 标题改为: "{}"'.format(dec["title"][:60])
     return line
 
@@ -370,6 +491,7 @@ def main():
     if not items:
         log("Inbox 为空，结束")
         return
+    items = merge_duplicates(items, dry=dry)
     try:
         decisions = classify(items, api_key)
     except Exception as e:
