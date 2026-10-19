@@ -121,6 +121,7 @@ THINGSORG_API_KEY=sk-xxx
 | `10月初`、`下个月` | 该月 1 日 |
 | `9/25-9/28 出差` | 开始日 |
 | `9/30 前发出` | 不占 When，写进 notes `[截止]` 行 |
+| notes 独立一行 `[Reminder] 2026-10-19 07:30` | When=那天 + Reminder=该时刻，iPhone 到点推送（兼容旧写法 `[闹钟]`） |
 | `有空`、`这周找个时间` | 无日期，只归区域（**绝不猜**） |
 | 日期已过去 | 不设 When，标题原样保留，日志记 WARN |
 
@@ -140,7 +141,8 @@ Cursor 等 agent 的工作流极简：
 
 - **循环任务**（"每周六晨跑"）无法自动设重复 —— Things 的 AppleScript
   字典没有 `recurrence` 属性，条目会归入区域但不排期，需手动设一次重复
-- Things 只有日期粒度，**时刻**（14:52）保留在标题里
+- Things 只有日期粒度，**时刻**默认保留在标题里；需要到点推送时在 notes
+  写 `[Reminder] YYYY-MM-DD HH:MM`（内部按 1/32 小时量化，误差 <2 分钟）
 - 需要 Things 3（Mac 版）+ macOS 自动化权限（首次运行授权一次）
 - 经聊天工具（Telegram 等）传输本项目文件后，plist 可能带
   `com.apple.quarantine`，launchd 拒载报 `error 5`；
